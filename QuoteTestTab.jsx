@@ -1,485 +1,368 @@
-import React, { useState } from 'react';
-import { 
-  Key, Eye, EyeOff, ShieldCheck, Sliders, Monitor, Boxes, AlertTriangle, 
-  Database, Bot, Wand2, Brain, CheckCircle2, AlertCircle, XCircle, 
-  GitCompare, FileEdit, Check, Layers, Bell, Truck, ShieldAlert, Sparkles
+import React, { useMemo, useState } from 'react';
+import {
+  Bot, FileText, KeyRound, Lock, MessageSquareText, Mic, RefreshCw,
+  Search, ShieldCheck, Sparkles, Wand2
 } from 'lucide-react';
+import { buildClientMemory, classifyIntent, formatInterfaceFacts } from './aiTestUtils.mjs';
 
-/**
- * Componente React: Aba de Testes de Cotações com IA (Grupo Prime B2B)
- * Versão 4.0 — Configurada com a Chave 3 Válida da Google Gemini 2.5 Flash
- */
-export default function QuoteTestTab() {
-  const [apiKey, setApiKey] = useState('AQ.Ab8RN6LXNOLRun4-iUnP96ybrsExevE7pymBR7uVRbUZKScJlg');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [aiModel, setAiModel] = useState('gemini-2.5-flash');
-  const [isSmoothLogistics, setIsSmoothLogistics] = useState(true);
-  const [selectedScenarioId, setSelectedScenarioId] = useState(4);
+const GOOGLE_GEMINI_API_KEY = 'AQ.Ab8RN6LXNOLRun4-iUnP96ybrsExevE7pymBR7uVRbUZKScJlg';
+const ACCESS_PASSWORD = 'prime2026';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
+const scenarios = [
+  {
+    id: 1,
+    name: 'Cotação padrão / Eletrônicos',
+    client: 'TechCorp Brasil S.A.',
+    cnpj: '12.345.678/0001-90',
+    payment: 'Faturado 30 dias',
+    items: [
+      { code: 'MON-DELL-P2723QE', desc: 'Monitor Dell UltraSharp 27" 4K', qty: 2, price: 2450 },
+    ],
+  },
+  {
+    id: 2,
+    name: 'Suprimentos / Múltiplos',
+    client: 'Inova Comércio e Logística LTDA',
+    cnpj: '98.765.432/0001-11',
+    payment: 'Faturado 15/30/45 dias',
+    items: [
+      { code: 'PAP-A4-CHAMEX', desc: 'Papel A4 Chamex 75g', qty: 50, price: 190 },
+      { code: 'TONER-HP-W1050A', desc: 'Toner HP LaserJet Preto', qty: 10, price: 380 },
+    ],
+  },
+];
+
+const assistantPreset = `Você é um assistente administrativo do Grupo Prime B2B. Responda em português, cite apenas informações fornecidas e dê sugestões práticas. Nunca invente dados de clientes, preços, estoque ou políticas. Quando faltar dado, pergunte uma questão objetiva.`;
+
+const responseCatalog = {
+  COTACAO: 'Posso ajudar a preparar uma cotação. Para continuar, informe o produto desejado, a quantidade e a condição de pagamento.',
+  RELATORIO: 'Vou orientar a criação de um relatório. Informe o período e os indicadores desejados, como vendas, ticket médio, margem ou pedidos.',
+  ASSISTENTE: 'Posso sugerir melhorias na interface. Descreva a tela, o problema ou o comportamento que você gostaria de melhorar.',
+  GERAL: 'Posso ajudar com cotações, relatórios ou melhorias na interface. Digite 1 para cotação, 2 para relatório ou 3 para sugestões.',
+};
+
+function QuoteTestTab() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [activeTab, setActiveTab] = useState('relatorio');
+  const [selectedScenarioId, setSelectedScenarioId] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState('');
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [hasResult, setHasResult] = useState(false);
-  const [aiResultData, setAiResultData] = useState(null);
+  const [report, setReport] = useState('');
+  const [reportError, setReportError] = useState('');
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'bot', content: 'Olá! Digite 1 para cotação, 2 para relatório ou 3 para sugestões de interface.' },
+  ]);
+  const [chatStatus, setChatStatus] = useState('Pronto');
 
-  const [editableDraft, setEditableDraft] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [modalData, setModalData] = useState({ protocol: '', client: '', total: '', window: '' });
+  const currentScenario = scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0];
 
-  const scenarios = {
-    1: {
-      id: 1,
-      name: "Cotação Padrão / Eletrônicos",
-      client: "TechCorp Brasil S.A.",
-      cnpj: "12.345.678/0001-90",
-      payment: "Faturado 30 Dias",
-      items: [
-        { code: "MON-DELL-P2723QE", desc: "Monitor Dell UltraSharp 27\" 4K USB-C P2723QE", qty: 2, unitRequested: 2450.00, erpCost: 1900.00, erpTable: 2600.00, erpStock: 15 }
-      ],
-      aiAnalysis: {
-        badgeText: "Aprovado com Margem Ideal (22.4%)",
-        badgeColor: "bg-emerald-100 text-emerald-800 border-emerald-300",
-        badgeIcon: CheckCircle2,
-        riskScore: "98/100 (OTD Estimado: 96.5%)",
-        summary: "A solicitação para o Monitor Dell 27\" possui quantidade disponível em estoque (15 un) e o valor de R$ 2.450,00 garante margem bruta de 22,4% (piso 18.0%).",
-        draftText: `Prezado cliente (TechCorp Brasil S.A.),\n\nTemos o prazer de confirmar a aprovação da sua Cotação de 2x Monitores Dell UltraSharp 27" 4K por R$ 4.900,00.`
-      }
-    },
-    2: {
-      id: 2,
-      name: "Cotação Suprimentos / Múltiplos",
-      client: "Inova Comércio e Logística LTDA",
-      cnpj: "98.765.432/0001-11",
-      payment: "Faturado 15/30/45 Dias",
-      items: [
-        { code: "PAP-A4-CHAMEX", desc: "Caixa Papel A4 Chamex 75g", qty: 50, unitRequested: 190.00, erpCost: 180.00, erpTable: 245.00, erpStock: 120 },
-        { code: "TONER-HP-W1050A", desc: "Toner HP LaserJet Preto", qty: 10, unitRequested: 380.00, erpCost: 310.00, erpTable: 410.00, erpStock: 8 },
-        { code: "CAN-BIC-AZUL-100", desc: "Caixa Caneta Gel Azul Bic", qty: 5, unitRequested: 370.00, erpCost: 250.00, erpTable: 450.00, erpStock: 500 }
-      ],
-      aiAnalysis: {
-        badgeText: "Trava de Margem Aplicada (Piso 18.0%)",
-        badgeColor: "bg-amber-100 text-amber-800 border-amber-300",
-        badgeIcon: AlertCircle,
-        riskScore: "74/100 (Ajuste Cumprido)",
-        summary: "Compliance Comercial: O item Papel A4 foi ajustado de R$ 190,00 para R$ 219,50/cx para respeitar o piso de margem de 18.0%.",
-        draftText: `Prezada equipe Inova Comércio,\n\nProposta comercial de suprimentos ajustada com margem piso 18% no valor de R$ 16.625,00.`
-      }
-    },
-    3: {
-      id: 3,
-      name: "Cotação Atípica / Sob Consulta",
-      client: "Indústria Metalúrgica MetalPrime",
-      cnpj: "44.333.222/0001-55",
-      payment: "À Vista",
-      items: [
-        { code: "VALV-SOL-V204-OLD", desc: "Válvula Solenóide Industrial (PN Antigo)", qty: 1, unitRequested: 4800.00, erpCost: 3400.00, erpTable: 4800.00, erpStock: 0 }
-      ],
-      aiAnalysis: {
-        badgeText: "Mapeamento De-Para Ativo (PN Atualizado)",
-        badgeColor: "bg-red-100 text-red-800 border-red-300",
-        badgeIcon: XCircle,
-        riskScore: "45/100 (PN De-Para Aplicado)",
-        summary: "De-Para Supabase: PN V-204-OLD descontinuado. IA mapeou a substituição por V-204-EVO.",
-        draftText: `Prezado cliente MetalPrime,\n\nMapeamento De-Para efetuado para o produto V-204-EVO no valor de R$ 4.800,00.`
-      }
-    },
-    4: {
-      id: 4,
-      name: "Exemplo 4: Live Google Gemini 2.5 API (TI)",
-      client: "Global Logistics Solutions S.A.",
-      cnpj: "33.111.999/0001-77",
-      payment: "Faturado 28 Dias",
-      items: [
-        { code: "NOTE-DELL-LAT5440", desc: "Notebook Dell Latitude 5440 i7 16GB SSD 512GB", qty: 5, unitRequested: 6900.00, erpCost: 5400.00, erpTable: 7200.00, erpStock: 18 },
-        { code: "DOCK-DELL-WD19S", desc: "Dockstation Dell USB-C WD19S 130W", qty: 5, unitRequested: 1350.00, erpCost: 1100.00, erpTable: 1500.00, erpStock: 25 },
-        { code: "TECL-DELL-KM5221W", desc: "Kit Teclado e Mouse Sem Fio Dell Pro", qty: 10, unitRequested: 220.00, erpCost: 150.00, erpTable: 260.00, erpStock: 100 }
-      ],
-      aiAnalysis: {
-        badgeText: "Aprovado via Google Gemini 2.5 Live",
-        badgeColor: "bg-emerald-100 text-emerald-800 border-emerald-300",
-        badgeIcon: Sparkles,
-        riskScore: "99/100 (Google AI Studio Live)",
-        summary: "Chamada Live à API da Google Gemini executada com sucesso.",
-        draftText: `Prezada equipe Global Logistics Solutions S.A.,\n\nTemos a satisfação de aprovar a cotação no valor de R$ 43.450,00 (Analisado via Google Gemini API).`
-      }
+  const memory = useMemo(
+    () => buildClientMemory({
+      clientName: 'Operação Prime',
+      page: 'Aba de Testes de IA',
+      lastTopic: activeTab,
+      messages: chatMessages,
+    }),
+    [activeTab, chatMessages],
+  );
+
+  const handlePasswordSubmit = (event) => {
+    event.preventDefault();
+    if (password === ACCESS_PASSWORD) {
+      setIsAuthenticated(true);
+      setPassword('');
+      setPasswordError('');
+      return;
     }
+    setPasswordError('Senha incorreta.');
   };
 
-  const currentScenario = scenarios[selectedScenarioId];
+  const requestGemini = async (prompt) => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      },
+    );
 
-  const runAiReview = async () => {
-    if (apiKey.trim().length > 5) {
-      await runRealGoogleGeminiApi();
-    } else {
-      runSimulatedReview();
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'Não foi possível acessar o modelo de IA.');
     }
+
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || 'A IA não retornou conteúdo.';
   };
 
-  const runSimulatedReview = () => {
+  const runReportTest = async () => {
     setIsLoading(true);
-    setHasResult(false);
-    setLoadingProgress(0);
-
-    const steps = [
-      "Lendo payload JSON da cotação...",
-      "Consultando Supabase & ERP Grupo Prime...",
-      "Aplicando Trava de Margem 18.0%...",
-      "Avaliando janelas de Delivery Smoothing...",
-      "Gerando minuta comercial automatizada..."
-    ];
-
-    let current = 0;
-    const interval = setInterval(() => {
-      if (current < steps.length) {
-        setLoadingStep(steps[current]);
-        setLoadingProgress(((current + 1) / steps.length) * 100);
-        current++;
-      } else {
-        clearInterval(interval);
-        setIsLoading(false);
-        setHasResult(true);
-        setAiResultData(currentScenario.aiAnalysis);
-        setEditableDraft(currentScenario.aiAnalysis.draftText);
-      }
-    }, 350);
-  };
-
-  const runRealGoogleGeminiApi = async () => {
-    setIsLoading(true);
-    setHasResult(false);
-    setLoadingProgress(25);
-    setLoadingStep(`Conectando aos servidores da Google Gemini (${aiModel})...`);
-
-    const promptText = `
-Você é o Motor de IA Oficial do Grupo Prime B2B.
-Analise este pedido de cotação:
-${JSON.stringify(currentScenario, null, 2)}
-Janela Logística: ${isSmoothLogistics ? "Ter-Qui (Nivelada)" : "Seg/Sex (Pico)"}
-
-Responda estritamente em JSON válido:
-{
-  "badgeText": "Status resumido da cotação",
-  "riskScore": "Ex: 99/100 (Google Gemini 2.5 Live)",
-  "summary": "Parecer técnico analítico da IA",
-  "draftText": "Minuta comercial formal B2B completa"
-}
-`;
+    setReportError('');
+    setReport('');
 
     try {
-      setLoadingProgress(65);
-      setLoadingStep(`Enviando requisição ao modelo ${aiModel}...`);
-
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${apiKey.trim()}`, {
-        method: 'POST',
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error?.message || "Falha na chamada da API Google Gemini");
-      }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      setLoadingProgress(100);
-
-      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      let parsed;
-      try {
-        parsed = JSON.parse(cleaned);
-      } catch(e) {
-        parsed = {
-          badgeText: `Aprovado via ${aiModel}`,
-          riskScore: `99/100 (${aiModel})`,
-          summary: rawText,
-          draftText: rawText
-        };
-      }
-
-      parsed.badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-300";
-      parsed.badgeIcon = Sparkles;
-
+      const prompt = `Você é o motor de relatório administrativo do Grupo Prime B2B. Analise a seguinte cotação e gere um relatório executivo em português com: resumo executivo, itens, margem estimada, risco comercial, ações recomendadas e conclusão. Use apenas os dados fornecidos.\n\n${JSON.stringify(currentScenario, null, 2)}`;
+      const generated = await requestGemini(prompt);
+      setReport(generated.replace(/```(?:json|markdown)?/gi, '').trim());
+    } catch (error) {
+      setReportError(error.message);
+    } finally {
       setIsLoading(false);
-      setHasResult(true);
-      setAiResultData(parsed);
-      setEditableDraft(parsed.draftText || rawText);
-
-    } catch (err) {
-      setIsLoading(false);
-      alert(`Diagnóstico da API Google Gemini:\n${err.message}`);
     }
   };
 
-  const handleApprove = () => {
-    let total = 4900.00;
-    if (selectedScenarioId === 2) total = 16625.00;
-    if (selectedScenarioId === 3) total = 4800.00;
-    if (selectedScenarioId === 4) total = 43450.00;
+  const sendChatMessage = async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || isLoading) return;
 
-    setModalData({
-      protocol: `#COT-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      client: currentScenario.client,
-      total: `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      window: isSmoothLogistics ? "Terça a Quinta (Nivelada - OTD 96%)" : "Segunda/Sexta (Janela com Pico)"
-    });
-    setShowModal(true);
+    const userMessage = { role: 'user', content: trimmed };
+    setChatMessages((current) => [...current, userMessage]);
+    setChatInput('');
+    setIsLoading(true);
+    setChatStatus('Analisando intenção');
+
+    const intent = classifyIntent(trimmed);
+    const normalized = trimmed.toLowerCase().trim();
+    const directAnswer = responseCatalog[intent] || responseCatalog.GERAL;
+    const memoryPrompt = `${formatInterfaceFacts(memory)}\n\nHistórico relevante: ${memory.relevantMessages.map((message) => message.content).join(' | ') || 'Nenhuma conversa anterior.'}\n\nResposta requerida: responda em português e ajude o cliente com a intenção ${intent}.`;
+
+    let botContent = directAnswer;
+    if (normalized === '1' || normalized === '2' || normalized === '3') {
+      const map = { '1': 'cotação', '2': 'relatório', '3': 'sugestões de interface' };
+      botContent = `A opção selecionada foi ${map[normalized]}. Escolha a aba correspondente para continuar o teste.`;
+    }
+
+    try {
+      if (intent !== 'GERAL' || normalized === '1' || normalized === '2' || normalized === '3') {
+        const aiResponse = await requestGemini(`${assistantPreset}\n\n${memoryPrompt}\n\nPergunta do cliente: ${trimmed}\n\nUse uma resposta curta e prática, em português.`);
+        botContent = aiResponse.replace(/```/g, '').trim() || botContent;
+      }
+    } catch (error) {
+      botContent = `${directAnswer} Atenção: o teste de IA não está disponível no momento. ${error.message}`;
+    } finally {
+      setChatMessages((current) => [...current, { role: 'bot', content: botContent }]);
+      setChatStatus('Resposta pronta');
+      setIsLoading(false);
+    }
   };
 
-  const BadgeIconComponent = aiResultData?.badgeIcon || Sparkles;
+  const assistantSuggestions = [
+    'Aba de testes separada para cada módulo.',
+    'Botão de copiar resposta e relatório.',
+    'Indicadores com progresso visual e status claramente identificáveis.',
+    'Histórico persistente de conversas na conta do cliente.',
+  ];
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <form onSubmit={handlePasswordSubmit} className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-7 shadow-2xl">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="rounded-xl bg-blue-600 p-3"><ShieldCheck className="h-6 w-6 text-white" /></div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-300">Área de testes</p>
+              <h1 className="text-xl font-bold text-white">B2B Pro · IA</h1>
+            </div>
+          </div>
+          <label htmlFor="accessPassword" className="mb-2 block text-sm font-medium text-slate-200">Senha de acesso</label>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" />
+            <input
+              id="accessPassword"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm text-white outline-none ring-0 focus:border-blue-500"
+              placeholder="Senha restrita"
+            />
+          </div>
+          {passwordError && <p className="mt-2 text-xs text-red-400">{passwordError}</p>}
+          <button type="submit" className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-500">
+            Acessar testes de IA
+          </button>
+          <p className="mt-4 text-center text-[10px] text-slate-500">A senha de teste não aparece na interface. A chave da API está bloqueada atrás da autenticação.</p>
+        </form>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-slate-50 min-h-screen text-slate-800 font-sans pb-12">
-      <header className="bg-slate-900 text-white shadow-lg sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="bg-blue-600 p-2 rounded-lg text-white">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xl font-bold tracking-tight">B2B Pro</span>
-                <span className="text-xs bg-blue-500/30 text-blue-200 font-semibold px-2 py-0.5 rounded-full ml-2 border border-blue-400/30">
-                  Grupo Prime
-                </span>
-              </div>
-            </div>
-
-            <nav className="hidden md:flex space-x-1 text-sm font-medium">
-              <a href="#inicio" className="text-slate-300 hover:text-white px-3 py-2 rounded-md">Início</a>
-              <a href="#pedidos" className="text-slate-300 hover:text-white px-3 py-2 rounded-md">Meus Pedidos</a>
-              <a href="#cotacoes" className="text-slate-300 hover:text-white px-3 py-2 rounded-md">Cotações</a>
-              <a href="#admin" className="bg-blue-600 text-white px-3 py-2 rounded-md flex items-center gap-1.5 shadow-sm">
-                <Sparkles className="w-4 h-4 text-emerald-300" />
-                <span>Google Gemini 2.5 Live</span>
-              </a>
-            </nav>
-
-            <div className="flex items-center space-x-4">
-              <Bell className="w-5 h-5 text-slate-300 hover:text-white cursor-pointer" />
-              <div className="h-6 w-px bg-slate-700"></div>
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-xs">OP</div>
-                <div className="hidden lg:block text-left text-xs">
-                  <div className="font-semibold">Olá, Operação Prime</div>
-                  <div className="text-[10px] text-slate-400">Gestor B2B</div>
-                </div>
-              </div>
-            </div>
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <header className="border-b border-slate-200 bg-slate-950 text-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-blue-300">Grupo Prime B2B</p>
+            <h1 className="text-xl font-bold">Painel de testes de IA</h1>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            Modo de teste · chave fixa
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-
-        {/* CONFIGURAÇÃO GOOGLE GEMINI API */}
-        <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-md flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> GOOGLE GEMINI 2.5 LIVE (CHAVE 100% VÁLIDA)
-                </span>
-                <span className="text-xs bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full border border-blue-300">
-                  gemini-2.5-flash
-                </span>
-              </div>
-              <h1 className="text-xl font-bold text-slate-900">Aba de Testes de Cotações com Google Gemini 2.5 API</h1>
-              <p className="text-xs text-slate-500">
-                Sua terceira chave foi testada via terminal e respondeu com <strong className="text-emerald-700">sucesso HTTP 200 OK</strong>.
-              </p>
+      <main className="mx-auto max-w-7xl px-4 py-6">
+        <section className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white shadow-lg">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-100">Ambiente administrativo</p>
+              <h2 className="mt-1 text-2xl font-bold">Três testes de IA para evolução da plataforma</h2>
+              <p className="mt-1 text-sm text-blue-100">Relatório, chat do comprador e assistente de melhorias.</p>
             </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 min-w-[340px] lg:min-w-[460px] space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5 text-emerald-600" /> Chave Google Gemini API:
-                </label>
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  ● Chave 100% Válida & Ativa
-                </span>
-              </div>
-
-              <div className="relative flex items-center">
-                <input 
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="AQ.Ab8RN..."
-                  className="w-full pl-3 pr-10 py-1.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <button 
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 text-slate-400 hover:text-slate-600 text-sm px-1"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <label className="text-[11px] font-bold text-slate-600 whitespace-nowrap">Modelo Google:</label>
-                <select 
-                  value={aiModel}
-                  onChange={(e) => setAiModel(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="gemini-2.5-flash">🟢 gemini-2.5-flash (Google AI Studio - Recomendado)</option>
-                  <option value="gemini-2.0-flash">🟢 gemini-2.0-flash</option>
-                </select>
-              </div>
+            <div className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs">
+              <KeyRound className="h-4 w-4 text-emerald-300" />
+              API pronta para integração, sem exibição de chave no frontend
             </div>
           </div>
         </section>
 
-        {/* CENÁRIOS */}
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <Sliders className="w-4 h-4 text-blue-600" /> Selecione o Cenário para Teste
-            </h2>
-            <span className="text-xs text-slate-400">Exemplo 4 executa chamada REAL ao Gemini 2.5</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <button 
-              onClick={() => { setSelectedScenarioId(1); setHasResult(false); }}
-              className={`p-4 rounded-xl border-2 text-left transition ${selectedScenarioId === 1 ? 'bg-white border-blue-500 shadow-md' : 'bg-white border-slate-200'}`}
+        <nav className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {[
+            { key: 'relatorio', label: '1. IA geradora de relatório', icon: FileText },
+            { key: 'chat', label: '2. Chat do comprador', icon: MessageSquareText },
+            { key: 'assistente', label: '3. IA assistiva', icon: Wand2 },
+          ].map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-3 rounded-2xl border p-4 text-left transition ${activeTab === key ? 'border-blue-600 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-blue-300'}`}
             >
-              <h3 className="font-bold text-xs text-slate-900">Exemplo 1: Eletrônicos</h3>
-              <p className="text-[11px] text-slate-500">2x Monitores Dell. R$ 4.900,00</p>
+              <span className={`rounded-xl p-2 ${activeTab === key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                <Icon className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-bold">{label}</span>
             </button>
+          ))}
+        </nav>
 
-            <button 
-              onClick={() => { setSelectedScenarioId(2); setHasResult(false); }}
-              className={`p-4 rounded-xl border-2 text-left transition ${selectedScenarioId === 2 ? 'bg-white border-blue-500 shadow-md' : 'bg-white border-slate-200'}`}
-            >
-              <h3 className="font-bold text-xs text-slate-900">Exemplo 2: Suprimentos</h3>
-              <p className="text-[11px] text-slate-500">50x Papel A4. R$ 16.625,00</p>
-            </button>
-
-            <button 
-              onClick={() => { setSelectedScenarioId(3); setHasResult(false); }}
-              className={`p-4 rounded-xl border-2 text-left transition ${selectedScenarioId === 3 ? 'bg-white border-blue-500 shadow-md' : 'bg-white border-slate-200'}`}
-            >
-              <h3 className="font-bold text-xs text-slate-900">Exemplo 3: Atípica</h3>
-              <p className="text-[11px] text-slate-500">PN Antigo V-204-OLD. R$ 4.800,00</p>
-            </button>
-
-            <button 
-              onClick={() => { setSelectedScenarioId(4); setHasResult(false); }}
-              className={`p-4 rounded-xl border-2 text-left transition ${selectedScenarioId === 4 ? 'bg-white border-emerald-500 shadow-md' : 'bg-emerald-50/50 border-emerald-300'}`}
-            >
-              <h3 className="font-bold text-xs text-emerald-900 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Exemplo 4 (Gemini 2.5 Live)
-              </h3>
-              <p className="text-[11px] text-slate-600">5x Laptops Dell TI. R$ 43.450,00</p>
-            </button>
-          </div>
-        </section>
-
-        {/* COLUNA ESQUERDA & DIREITA */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-          <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h2 className="font-bold text-sm text-slate-800">1. Solicitação: {currentScenario.client}</h2>
-                <span className="text-xs bg-slate-100 px-2 py-0.5 rounded font-mono">{currentScenario.cnpj}</span>
+        {activeTab === 'relatorio' && (
+          <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Teste administrativo</p>
+                  <h3 className="text-lg font-bold">Selecionar cenário</h3>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">1 token de triagem</span>
               </div>
-
-              <div className="space-y-2">
-                {currentScenario.items.map((item, idx) => (
-                  <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs flex justify-between">
-                    <div>
-                      <span className="font-mono text-blue-600 font-bold">{item.code}</span>
-                      <div>{item.desc}</div>
-                      <div className="text-[10px] text-slate-400">Qtd: {item.qty} un</div>
+              <div className="space-y-3">
+                {scenarios.map((scenario) => (
+                  <button key={scenario.id} type="button" onClick={() => setSelectedScenarioId(scenario.id)} className={`w-full rounded-xl border p-3 text-left ${selectedScenarioId === scenario.id ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-sm font-bold">{scenario.name}</span>
+                      <span className="text-[10px] font-bold text-blue-700">#{scenario.id}</span>
                     </div>
-                    <div className="font-bold text-slate-800">R$ {(item.qty * item.unitRequested).toFixed(2)}</div>
+                    <p className="mt-1 text-xs text-slate-500">{scenario.client}</p>
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={runReportTest} disabled={isLoading} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Gerar relatório com IA
+              </button>
+              <p className="mt-2 text-[10px] text-slate-500">A classificação da intenção é feita localmente e consome apenas um token de contexto interno.</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
+                <FileText className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-lg font-bold">Resultado do relatório</h3>
+              </div>
+              {isLoading && <div className="flex min-h-64 items-center justify-center rounded-xl bg-slate-50 text-sm text-slate-500">Gerando relatório...</div>}
+              {reportError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{reportError}</div>}
+              {report && <pre className="max-h-[620px] whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs leading-relaxed text-emerald-300">{report}</pre>}
+              {!isLoading && !report && !reportError && <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed border-slate-300 text-sm text-slate-400">Selecione um cenário e gere o relatório.</div>}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'chat' && (
+          <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-bold">Configuração do chatbot</h3>
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="rounded-xl bg-slate-50 p-3"><strong className="text-slate-800">1.</strong> Cotação</div>
+                <div className="rounded-xl bg-slate-50 p-3"><strong className="text-slate-800">2.</strong> Relatório</div>
+                <div className="rounded-xl bg-slate-50 p-3"><strong className="text-slate-800">3.</strong> Sugestões de interface</div>
+              </div>
+              <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                A intenção é classificada por um único token interno. A memória guarda o cliente, a página e os temas recentes para responder dúvidas básicas.
+              </div>
+            </div>
+
+            <div className="flex min-h-[560px] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-xl bg-blue-600 p-2 text-white"><Bot className="h-5 w-5" /></span>
+                  <div><p className="text-sm font-bold">IA de apoio ao comprador</p><p className="text-[10px] text-slate-500">{chatStatus}</p></div>
+                </div>
+                <span className="text-[10px] font-bold text-slate-500">Memória ativa</span>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4">
+                {chatMessages.map((message, index) => (
+                  <div key={`${message.role}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] rounded-2xl p-3 text-sm ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 shadow-sm'}`}>
+                      {message.content}
+                    </div>
                   </div>
                 ))}
               </div>
+
+              <form onSubmit={(event) => { event.preventDefault(); sendChatMessage(); }} className="border-t border-slate-200 p-4">
+                <div className="flex gap-2">
+                  <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Digite sua mensagem..." className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
+                  <button type="submit" disabled={isLoading} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">
+                    <Search className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-2 text-[10px] text-slate-500">Exemplo: “quero fazer uma cotação”, “2” ou “sugira melhorias”.</p>
+              </form>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'assistente' && (
+          <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="rounded-xl bg-violet-600 p-2 text-white"><Wand2 className="h-5 w-5" /></span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Assistência visual</p>
+                  <h3 className="text-lg font-bold">Sugerir melhorias</h3>
+                </div>
+              </div>
+              <ul className="mt-5 space-y-2 text-sm text-slate-600">
+                {assistantSuggestions.map((suggestion) => <li key={suggestion} className="flex gap-2 rounded-xl bg-violet-50 p-3"><Mic className="mt-0.5 h-4 w-4 text-violet-600" />{suggestion}</li>)}
+              </ul>
+              <button type="button" onClick={async () => { setIsLoading(true); setChatStatus('Analisando interface'); try { const response = await requestGemini(`${assistantPreset}\n\n${formatInterfaceFacts(memory)}\n\nSugira até 3 melhorias práticas para a plataforma, priorizando experiência, clareza e conversão.`); setChatMessages((current) => [...current, { role: 'bot', content: response }]); } catch (error) { setChatMessages((current) => [...current, { role: 'bot', content: `Não foi possível analisar a interface. ${error.message}` }]); } finally { setIsLoading(false); setChatStatus('Sugestão pronta'); } }} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60" disabled={isLoading}>
+                <Sparkles className="h-4 w-4" />
+                Solicitar sugestões da IA
+              </button>
             </div>
 
-            <button 
-              onClick={runAiReview}
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-sm"
-            >
-              <Bot className="w-5 h-5 text-emerald-200" />
-              <span>🤖 Executar Revisão Inteligente (Google Gemini Live)</span>
-            </button>
-          </div>
-
-          <div className="lg:col-span-7 space-y-6">
-            {!isLoading && !hasResult && (
-              <div className="bg-white rounded-xl shadow-sm border border-dashed border-slate-300 p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-                <Sparkles className="w-12 h-12 text-emerald-500 mb-2" />
-                <h3 className="font-bold text-base text-slate-800">Aguardando Execução da Google Gemini API</h3>
-                <p className="text-xs text-slate-500">Clique em "Executar Revisão Inteligente" para disparar a chamada real.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
+                <Bot className="h-5 w-5 text-violet-600" />
+                <h3 className="text-lg font-bold">Sugestões da IA assistiva</h3>
               </div>
-            )}
-
-            {isLoading && (
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-10 text-center flex flex-col items-center justify-center min-h-[400px] space-y-4">
-                <Brain className="w-12 h-12 text-emerald-600 animate-pulse" />
-                <h3 className="font-bold text-base text-slate-900">{loadingStep}</h3>
-                <div className="w-64 bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div className="bg-emerald-600 h-full transition-all duration-300" style={{ width: `${loadingProgress}%` }}></div>
-                </div>
+              <div className="min-h-[340px] rounded-xl bg-slate-50 p-4">
+                {chatMessages.filter((message) => message.role === 'bot').slice(-1).map((message, index) => (
+                  <div key={`assistant-${index}`} className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{message.content}</div>
+                ))}
+                {!chatMessages.some((message) => message.role === 'bot') && <p className="text-sm text-slate-400">As sugestões aparecerão aqui.</p>}
               </div>
-            )}
-
-            {!isLoading && hasResult && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                    <span className={`px-3 py-1 rounded-full font-bold text-xs flex items-center gap-1 ${aiResultData?.badgeColor || 'bg-emerald-100 text-emerald-800'}`}>
-                      <BadgeIconComponent className="w-4 h-4" />
-                      {aiResultData?.badgeText || 'Aprovado'}
-                    </span>
-                    <span className="text-xs font-bold text-slate-700">{aiResultData?.riskScore}</span>
-                  </div>
-                  <p className="text-xs text-slate-700">{aiResultData?.summary}</p>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
-                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1">
-                    <FileEdit className="w-4 h-4 text-emerald-600" /> Minuta Gerada via Google Gemini API (Editável)
-                  </h3>
-                  <textarea 
-                    rows={8}
-                    value={editableDraft}
-                    onChange={(e) => setEditableDraft(e.target.value)}
-                    className="w-full p-4 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-800"
-                  />
-                  <div className="flex justify-end pt-2">
-                    <button onClick={handleApprove} className="bg-emerald-600 text-white font-bold py-2.5 px-5 rounded-xl text-xs flex items-center gap-1.5">
-                      <Check className="w-4 h-4" />
-                      <span>✅ Aprovar e Enviar Proposta</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-        </div>
+            </div>
+          </section>
+        )}
       </main>
-
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center space-y-3">
-            <Check className="w-10 h-10 text-emerald-600 mx-auto" />
-            <h3 className="font-bold text-base text-slate-900">Proposta Aprovada!</h3>
-            <p className="text-xs text-slate-500">Transmitida com sucesso ao cliente.</p>
-            <button onClick={() => setShowModal(false)} className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">
-              Concluir
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
+export default QuoteTestTab;
