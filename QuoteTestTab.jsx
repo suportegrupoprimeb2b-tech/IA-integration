@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { buildClientMemory, classifyIntent, formatInterfaceFacts } from './aiTestUtils.mjs';
 
-const GOOGLE_GEMINI_API_KEY = 'AQ.Ab8RN6LXNOLRun4-iUnP96ybrsExevE7pymBR7uVRbUZKScJlg';
 const ACCESS_PASSWORD = 'prime2026';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
@@ -46,6 +45,7 @@ function QuoteTestTab() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [activeTab, setActiveTab] = useState('relatorio');
   const [selectedScenarioId, setSelectedScenarioId] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -81,18 +81,34 @@ function QuoteTestTab() {
   };
 
   const requestGemini = async (prompt) => {
+    const currentApiKey = apiKey.trim();
+    if (!currentApiKey) {
+      throw new Error('Informe sua chave atual da API do Google Gemini para usar o Gemini 2.5 Flash.');
+    }
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': currentApiKey,
+        },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       },
     );
 
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error?.message || 'Não foi possível acessar o modelo de IA.');
+      const message = data.error?.message || 'Não foi possível acessar o modelo de IA.';
+      if (
+        response.status === 401
+        || response.status === 403
+        || /API_KEY_INVALID|invalid authentication credentials|API key not valid|UNAUTHENTICATED/i.test(message)
+      ) {
+        throw new Error(`A chave atual do Gemini foi recusada. Confira se ela está válida e se a Generative Language API está habilitada. Detalhe: ${message}`);
+      }
+      throw new Error(message);
     }
 
     return data.candidates?.[0]?.content?.parts?.[0]?.text || 'A IA não retornou conteúdo.';
@@ -200,12 +216,32 @@ function QuoteTestTab() {
           </div>
           <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
             <Sparkles className="h-3.5 w-3.5" />
-            Modo de teste · chave fixa
+            Google Gemini 2.5 Flash
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6">
+        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <label htmlFor="geminiApiKey" className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
+            <KeyRound className="h-4 w-4 text-blue-600" />
+            Chave atual da API do Google Gemini
+          </label>
+          <input
+            id="geminiApiKey"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 sm:max-w-xl"
+            placeholder="Cole aqui a chave válida de hoje"
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            O modelo usado é <strong>gemini-2.5-flash</strong>. A chave fica somente na memória desta página e precisa ser informada novamente ao recarregar.
+          </p>
+        </section>
+
         <section className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white shadow-lg">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -215,7 +251,7 @@ function QuoteTestTab() {
             </div>
             <div className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs">
               <KeyRound className="h-4 w-4 text-emerald-300" />
-              API pronta para integração, sem exibição de chave no frontend
+              Chave de teste gerenciada nesta sessão
             </div>
           </div>
         </section>
